@@ -28,7 +28,7 @@ void begin_session(session_t *sess)
     }
     if(pid==0){
         close(sockfds[0]);
-        //服务进程
+        //ftp服务进程   包括控制连接 和数据连接
         sess->child_fd = sockfds[1];
         handle_child(sess);
     }else{
