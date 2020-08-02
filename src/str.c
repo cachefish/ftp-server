@@ -4,7 +4,7 @@
 
 void str_trim_crlf(char *str)     //去除每行最后的\r\n
 {
-        char *p = str[strlen(str)-1];   //指向最后一个字符
+        char *p = &str[strlen(str)-1];   //指向最后一个字符
         while(*p=='\r'||*p=='\n'){
             *p --= '\0';
         }

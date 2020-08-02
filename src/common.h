@@ -39,7 +39,7 @@
 #define MAX_COMMAND_LINE 1024
 #define MAX_COMMAND 32          
 #define MAX_ARG 1024
-#define ICEFTP_CONF "iceftpd.conf"
+#define FTPSERVER_CONF "ftpserver.conf"
 
 #endif /* _COMMON_H_ */
 

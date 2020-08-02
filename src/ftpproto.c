@@ -33,6 +33,6 @@ void handle_child(session_t *sess)
         str_upper(sess->cmd);
 
         //处理ftp命令
-        return 0;
+        return ;
     }
 }
