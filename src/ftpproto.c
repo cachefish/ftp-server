@@ -242,7 +242,7 @@ static void do_pasv(session_t *sess)
 }
 static void do_type(session_t *sess)
 {
-    if(strcmp(sess->arg,"A"==0)){
+    if(strcmp(sess->arg,"A")==0){
         sess->is_ascii=1;
         ftp_reply(sess,FTP_TYPEOK,"Switching to ASCII mode");
     }else if(strcmp(sess->arg,"I")==0){

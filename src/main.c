@@ -68,7 +68,6 @@ const char *tunable_listen_address;
                                         };  //初始
 
     int listenfd = tcp_server(tunable_listen_address,tunable_listen_port);
-    printf("tunable_listen_address=%s",tunable_listen_address);
     int conn;
     pid_t pid;
     //接受客户端连接  使用多进程方式
