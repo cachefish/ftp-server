@@ -9,6 +9,7 @@
 typedef struct session
 {
         //控制连接
+        uid_t uid;
         int ctrl_fd;//已连接套接字
         char cmdline[MAX_COMMAND_LINE];     //保存命令行
         char cmd[MAX_COMMAND];//解析命令行的命令
@@ -16,6 +17,8 @@ typedef struct session
         //父子进程通信
         int parent_fd;
         int child_fd;
+        //FTP协议状态
+        int is_ascii;
 }session_t;
 
 

@@ -5,8 +5,8 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <pwd.h>
-#include <shadow.h>
-#include <crypt.h>
+#include <shadow.h>     //getspnam
+#include <crypt.h>           //crypt()  加密
 #include <fcntl.h>
 #include <errno.h>
 #include <signal.h>

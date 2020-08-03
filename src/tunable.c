@@ -2,7 +2,7 @@
 
 int tunable_pasv_enable = 1;
 int tunable_port_enable = 1;
-unsigned int tunable_listen_port = 21;
+unsigned int tunable_listen_port = 5188;
 unsigned int tunable_max_clients = 2000;
 unsigned int tunable_max_per_ip = 50;
 unsigned int tunable_accept_timeout = 60;

@@ -60,7 +60,12 @@ const char *tunable_listen_address;
         int child_fd;
         
     }session_t;*/
-    session_t sess = {-1,"","","",-1,-1};  //初始
+    session_t sess = {0,-1,"","","",
+                                        /*父子进程通道*/
+                                        -1,-1,
+                                        /*FTP协议状态*/
+                                        0
+                                        };  //初始
 
     int listenfd = tcp_server(tunable_listen_address,tunable_listen_port);
     printf("tunable_listen_address=%s",tunable_listen_address);
