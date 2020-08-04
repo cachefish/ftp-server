@@ -3,8 +3,10 @@
 #include"session.h"
 #include"parseconf.h"
 #include"tunable.h"
+#include"ftpproto.h"
 int main(void)
 {
+   //list_common(sess);
 
 /*
 int tunable_pasv_enable = 1;
@@ -60,7 +62,11 @@ const char *tunable_listen_address;
         int child_fd;
         
     }session_t;*/
-    session_t sess = {0,-1,"","","",
+    session_t sess = {
+                                        /*控制连接*/
+                                        0,-1,"","","",
+                                        /*数据连接*/
+                                        NULL,-1,
                                         /*父子进程通道*/
                                         -1,-1,
                                         /*FTP协议状态*/

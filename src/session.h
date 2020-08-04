@@ -14,6 +14,10 @@ typedef struct session
         char cmdline[MAX_COMMAND_LINE];     //保存命令行
         char cmd[MAX_COMMAND];//解析命令行的命令
         char arg[MAX_ARG];  //参数
+        //数据连接
+        struct sockaddr_in*port_addr;
+        //数据套接字
+        int data_fd;
         //父子进程通信
         int parent_fd;
         int child_fd;
