@@ -66,13 +66,14 @@ const char *tunable_listen_address;
                                         /*控制连接*/
                                         0,-1,"","","",
                                         /*数据连接*/
-                                        NULL,-1,
+                                        NULL,-1,-1,
                                         /*父子进程通道*/
                                         -1,-1,
                                         /*FTP协议状态*/
                                         0
                                         };  //初始
 
+    signal(SIGCHLD,SIG_IGN);   //忽略
     int listenfd = tcp_server(tunable_listen_address,tunable_listen_port);
     int conn;
     pid_t pid;
