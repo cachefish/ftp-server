@@ -16,6 +16,8 @@ typedef struct session
         char arg[MAX_ARG];  //参数
         //数据连接
         struct sockaddr_in*port_addr;
+        //监听套接字
+        int pasv_listen_fd;
         //数据套接字
         int data_fd;
         //父子进程通信
