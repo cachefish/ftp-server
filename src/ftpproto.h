@@ -5,7 +5,7 @@
 
 void handle_child(session_t *sess);
 
-int list_common(session_t*sess);
+int list_common(session_t*sess,int detail);
 
 
 

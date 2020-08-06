@@ -3,13 +3,16 @@
 #include"str.h"
 #include"ftpcodes.h"
 #include"tunable.h"
+#include"privsock.h"
 void ftp_reply(session_t *sess,int status,const char*text);
 void ftp_lreply(session_t *sess,int status,const char*text);
-int get_transfer_fd(session_t* sess);
 
+
+int get_transfer_fd(session_t* sess);
+int get_pasv_fd(session_t* sess);
 int port_active(session_t* sess);
 int pasv_active(session_t* sess);
-
+int get_port_fd(session_t *sess);
 static void do_user(session_t *sess);
 static void do_pass(session_t*sess);
 static void do_cwd(session_t *sess);
@@ -168,7 +171,7 @@ void ftp_lreply(session_t *sess,int status,const char*text)
     writen(sess->ctrl_fd,buf,strlen(buf));
 }
 
-int list_common(session_t*sess)
+int list_common(session_t*sess,int detail)
 {
    DIR *dir =  opendir(".");
    if(dir==NULL){
@@ -182,126 +185,40 @@ int list_common(session_t*sess)
         if(lstat(dt->d_name,&sbuf)<0)//获取文件状态，保存到第二个参数中
         {
             continue;
-        }      
+        }   
+        char buf[1024] = {0};
+        if(detail)
+        {
+                        const char *perms = statbuf_get_perms(&sbuf);
+                
+                //硬连接数   st_nlink 
+                
+                int off = 0;
+                off += sprintf(buf,"%s",perms);
+                off += sprintf(buf+off,"%3ld %-8d %-8d ",sbuf.st_nlink,sbuf.st_uid,sbuf.st_gid);
+                off += sprintf(buf+off,"%8lu  ",sbuf.st_size);
+
+                
+                const char *databuf = statbuf_get_date(&sbuf);
+                off += sprintf(buf+off,"%s",databuf);
+
+                
+                //文件名  要判断是否是链接文件
+                
+                if(S_ISLNK(sbuf.st_mode)){
+                    char tmp[1024] = {0};
+                    readlink(dt->d_name,tmp,sizeof(tmp));
+                    off += sprintf(buf+off,"%s -> %s\r\n",dt->d_name,tmp);
+            }else{
+                    off += sprintf(buf+off,"%s\r\n",dt->d_name);
+            }
+        }else{
+            sprintf(buf,"%s\r\n",dt->d_name);
+        }  
         //过滤.xxx文件
         if(dt->d_name[0]=='.'){
             continue;
         }
-
-        //开始解析权限位  drwxr-xr-x
-        char perms[]="----------";
-        perms[0]='?';
-
-        mode_t mode = sbuf.st_mode;
-        switch (mode&S_IFMT)
-        {
-        case S_IFREG:
-            perms[0]='-';
-            break;
-        case S_IFDIR:
-            perms[0]='d';
-            break;
-        case S_IFLNK:
-            perms[0]='l';
-            break;
-        case S_IFIFO:
-            perms[0]='p';
-            break;
-        case S_IFSOCK:
-            perms[0]='s';
-            break;
-        case S_IFCHR:
-            perms[0]='c';
-            break;
-        case S_IFBLK:
-            perms[0]='b';
-            break;
-        default:
-            break;
-        }
-
-        if(mode&&S_IRUSR)
-        {
-            perms[1]='r';
-        }
-         if(mode&&S_IWUSR)
-        {
-            perms[2]='w';
-        }
-         if(mode&&S_IXUSR)
-        {
-            perms[3]='x';
-        }
-         if(mode&&S_IRGRP)
-        {
-            perms[4]='r';
-        }
-         if(mode&&S_IWGRP)
-        {
-            perms[5]='w';
-        }
-         if(mode&&S_IXGRP)
-        {
-            perms[6]='x';
-        }
-         if(mode&&S_IROTH)
-        {
-            perms[7]='r';
-        }
-         if(mode&&S_IWOTH)
-        {
-            perms[8]='w';
-        }
-         if(mode&&S_IXOTH)
-        {
-            perms[9]='x';
-        }
-        if(mode&S_ISUID)
-        {
-            perms[3]=(perms[3]=='x')?'s':'S';
-        }
-        if(mode&S_ISGID)
-        {
-            perms[6]=(perms[6]=='x')?'s':'S';
-        }
-        if(mode&S_ISVTX)
-        {
-            perms[9]=(perms[9]=='x')?'t':'T';
-        }
-        
-        //硬连接数   st_nlink 
-        char buf[1024] = {0};
-        int off = 0;
-        off += sprintf(buf,"%s",perms);
-        off += sprintf(buf+off,"%3ld %-8d %-8d ",sbuf.st_nlink,sbuf.st_uid,sbuf.st_gid);
-        off += sprintf(buf+off,"%8lu  ",sbuf.st_size);
-
-        //时间格式  
-        const char *p_date_format = "%b %e %H:%M";
-        struct timeval tv;
-        gettimeofday(&tv,NULL);     //获取系统时间
-        time_t local_time = tv.tv_sec;
-        if(sbuf.st_mtime>local_time||(local_time-sbuf.st_mtime)>60*60*24*182)
-        {
-            p_date_format =  "%b  %e  %Y";
-        }
-        
-        char databuf[64]={0};
-        struct tm*p_tm = localtime(&local_time);
-        strftime(databuf,sizeof(databuf),p_date_format,p_tm);
-        off += sprintf(buf+off,"%s",databuf);
-
-        
-        //文件名  要判断是否是链接文件
-        
-        if(S_ISLNK(sbuf.st_mode)){
-            char tmp[1024] = {0};
-            readlink(dt->d_name,tmp,sizeof(tmp));
-            off += sprintf(buf+off,"%s -> %s\r\n",dt->d_name,tmp);
-       }else{
-            off += sprintf(buf+off,"%s\r\n",dt->d_name);
-       }
-
         writen(sess->data_fd,buf,sizeof(buf));
         //printf("%s",buf);
    }
@@ -323,8 +240,19 @@ int port_active(session_t* sess)
 }
 int pasv_active(session_t* sess)
 {
-    if(sess->port_addr){
+    /*
+    if(sess->port_listenfd !=-1){
         if(port_active(sess))
+        {
+                fprintf(stderr,"botn port an pasv are active ");
+                exit(EXIT_FAILURE);
+        }
+        return 1;
+    }*/
+    priv_sock_send_cmd(sess->child_fd,PRIV_SOCK_PASV_ACTIVE);  //向nobody发送请求
+    int  active = priv_sock_get_int(sess->child_fd);
+    if(active){
+          if(port_active(sess))
         {
                 fprintf(stderr,"botn port an pasv are active ");
                 exit(EXIT_FAILURE);
@@ -333,6 +261,37 @@ int pasv_active(session_t* sess)
     }
     return 0;
 }
+
+int get_port_fd(session_t *sess)
+{
+        //nobody进程协助完成数据连接通道的创建
+    priv_sock_send_cmd(sess->child_fd,PRIV_SOCK_GET_DATA_SOCK);
+    unsigned short port = ntohs(sess->port_addr->sin_port);
+    char *ip = inet_ntoa(sess->port_addr->sin_addr);
+
+    priv_sock_send_int(sess->child_fd,(int)port);
+
+    priv_sock_send_buf(sess->child_fd,ip,strlen(ip));
+    char res = priv_sock_get_result(sess->child_fd);
+    if(res == PRIV_SOCK_RESULT_BAD){
+        return 0;
+    }else if(res==PRIV_SOCK_RESULT_OK){     //成功应答
+        sess->data_fd =  priv_sock_recv_fd(sess->child_fd);
+    }
+    return 1;
+}
+int get_pasv_fd(session_t* sess)
+{
+    priv_sock_send_cmd(sess->child_fd,PRIV_SOCK_PASV_ACCEPT);
+    char res =  priv_sock_get_result(sess->child_fd);
+    if(res == PRIV_SOCK_RESULT_BAD){
+        return 0;
+    }else if(res == PRIV_SOCK_RESULT_OK){
+        //接收缩回传回来的数据套接字
+        sess->data_fd = priv_sock_recv_fd(sess->child_fd);
+    }
+    return 1;
+}
 int get_transfer_fd(session_t* sess)
 {
     //判断是否收到PORT或者PASV命令
@@ -340,20 +299,25 @@ int get_transfer_fd(session_t* sess)
         ftp_reply(sess,FTP_BADSENDCONN,"Use PORT or PASV first.");
             return 0;
     }
+    int ret =1;
     //主动模式
     if(port_active(sess))
     {
         //创建套接字，绑定20，connect对方
-        int fd =  tcp_client(0);
+        /*int fd =  tcp_client(0);
         if(connect_timeout(fd,sess->port_addr,tunable_data_connection_timeout))
         {
                 close(fd);
                 return 0;
+        } 
+        sess->data_fd = fd;    
+        */ 
+        if(get_port_fd(sess)==0){
+            ret = 0;
         }
-
-        sess->data_fd = fd;     
     } 
     if(pasv_active(sess)){  //如果是被动模式
+        /*
         int fd = accept_timeout(sess->pasv_listen_fd,NULL,tunable_accept_timeout);
         close(sess->pasv_listen_fd);
         if(fd==-1)
@@ -361,12 +325,17 @@ int get_transfer_fd(session_t* sess)
             return 0;
         }
         sess->data_fd = fd;
+        */
+       if(get_pasv_fd(sess)==0)     //获取被动套接字
+       {
+           ret = 0;
+       }
     }
-    if(sess->port_addr){
+     if(sess->port_addr){
         free(sess->port_addr);
         sess->port_addr=NULL;
-    }
-    return 1;
+        }
+    return ret;
 }
 
 
@@ -460,6 +429,8 @@ static void do_pasv(session_t *sess)
     //Entering Passive Mode (192,168,244,100,101,46)
     char ip[16] = {0};
     getlocalip(ip);
+    
+    /*
     sess->pasv_listen_fd = tcp_server(ip,0);
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(addr);
@@ -467,7 +438,12 @@ static void do_pasv(session_t *sess)
     {
         ERR_EXIT("getsockname");
     }
-    unsigned port = ntohs(addr.sin_port);
+       unsigned port = ntohs(addr.sin_port);
+    */
+    priv_sock_send_cmd(sess->child_fd,PRIV_SOCK_PASV_LISTEN);
+    unsigned short port =  (unsigned short)priv_sock_get_int(sess->child_fd);
+
+ 
     unsigned int v[4];
     sscanf(ip,"%u.%u.%u.%u",&v[0],&v[1],&v[2],&v[3]);
     //格式化文本信息
@@ -513,15 +489,28 @@ static void do_list(session_t *sess)
     //150
     ftp_reply(sess,FTP_DATACONN,"Here comes the directory listing.");
     //传输列表
-    list_common(sess);
+    list_common(sess,1);
     //关闭数据套接字
     close(sess->data_fd);
     //226
     ftp_reply(sess,FTP_TRANSFEROK,"Directory send OK");
 }
+//实现目录的短清单
 static void do_nlst(session_t *sess)
 {
-
+    //创建数据连接
+    if(get_transfer_fd(sess)==0)
+    {
+        return;
+    }
+    //150
+    ftp_reply(sess,FTP_DATACONN,"Here comes the directory listing.");
+    //传输列表
+    list_common(sess,0);
+    //关闭数据套接字
+    close(sess->data_fd);
+    //226
+    ftp_reply(sess,FTP_TRANSFEROK,"Directory send OK");
 }
 static void do_rest(session_t *sess)
 {
