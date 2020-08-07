@@ -70,7 +70,7 @@ const char *tunable_listen_address;
                                         /*父子进程通道*/
                                         -1,-1,
                                         /*FTP协议状态*/
-                                        0
+                                        0,0,NULL
                                         };  //初始
 
     signal(SIGCHLD,SIG_IGN);   //忽略
