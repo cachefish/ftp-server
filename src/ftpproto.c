@@ -7,6 +7,7 @@
 void ftp_reply(session_t *sess,int status,const char*text);
 void ftp_lreply(session_t *sess,int status,const char*text);
 
+void upload_common(session_t* sess,int is_append);
 
 int get_transfer_fd(session_t* sess);
 int get_pasv_fd(session_t* sess);
@@ -225,6 +226,126 @@ int list_common(session_t*sess,int detail)
    closedir(dir);
    return 1;
 }
+void upload_common(session_t* sess,int is_append)  //上传
+{
+    //创建数据连接
+    if(get_transfer_fd(sess)==0)
+    {
+        return;
+    }
+
+    long long offset = sess->restart_pos;
+    sess->restart_pos = 0;
+
+
+    //打开文件
+    int fd = open(sess->arg,O_CREAT|O_WRONLY,0666);
+    if(fd == -1){
+        ftp_reply(sess,FTP_UPLOADFAIL,"Could not create File.");
+        return;
+    }
+    //给文件加写锁
+    int ret;
+    ret = lock_file_write(fd);
+    if(ret==-1)
+    {
+          ftp_reply(sess,FTP_FILEFAIL,"Could not create File.");
+        return;
+    }
+
+    //STOR
+    //REST + STOR
+    //APPE
+ if (!is_append && offset == 0) {   // STOR
+		ftruncate(fd, 0);
+		if (lseek(fd, 0, SEEK_SET) < 0) {
+			ftp_reply(sess, FTP_UPLOADFAIL, "Could not create file.");
+			return;
+		}
+	}
+	else if (!is_append && offset != 0) { // REST+STOR
+		if (lseek(fd, offset, SEEK_SET) < 0) {
+			ftp_reply(sess, FTP_UPLOADFAIL, "Could not create file.");
+			return;
+		}
+	}
+	else if (is_append) {   // APPE  //追加，将文件指针偏移到文件末尾
+		if (lseek(fd, 0, SEEK_END) < 0) {
+			ftp_reply(sess, FTP_UPLOADFAIL, "Could not create file.");
+			return;
+		}
+	}
+    if(offset!=0)   //说明有断点
+    {
+        ret = lseek(fd,offset,SEEK_SET);
+        if(ret == -1){
+           ftp_reply(sess,FTP_FILEFAIL,"Failed to open File.");
+        return;
+        }
+    }
+
+
+	struct stat sbuf;
+	ret = fstat(fd, &sbuf);
+	if (!S_ISREG(sbuf.st_mode)) {
+		ftp_reply(sess, FTP_UPLOADFAIL, "Could not create file.");
+		return;
+	}
+    //150   模式判定  二进制
+    char text[2048] ={0};
+    if(sess->is_ascii)
+    {
+        sprintf(text,"Opening ASCII mode data connection for %s (%lld bytes).",
+            sess->arg,(long long)sbuf.st_size);
+    }else{
+        sprintf(text,"Opening BINARY mode data connection for %s (%lld bytes).",
+            sess->arg,(long long)sbuf.st_size);
+    }    
+    ftp_reply(sess,FTP_DATACONN,text);
+
+    //上传文件
+    int flag=0;
+    char buf[1024];
+   while(1)
+    {
+        ret = read(sess->data_fd,buf,sizeof(buf));   //会涉及到系统调用
+        if(ret == -1){
+            if(errno == EINTR)
+            {
+                continue;
+            }else{
+                flag =2;
+                break;
+            }        
+        }else if(ret ==0){
+            flag = 0;
+            break;
+        }
+        if(writen(sess->data_fd,buf,ret))
+        {
+            flag = 1;
+            break;
+        }
+    }
+
+
+    //关闭数据套接字
+    list_common(sess,1);
+    close(sess->data_fd);
+    sess->data_fd = -1;
+    close(fd);
+    if(flag==0){
+         //226
+        ftp_reply(sess,FTP_TRANSFEROK,"Transfer complete.");
+    }else if(flag == 1){    //读取数据失败  426
+        ftp_reply(sess,FTP_BADSENDFILE,"Failure writting from local file.");
+    }else if(flag ==2){ //写入失败  451
+        ftp_reply(sess,FTP_BADSENDNET,"Failure reading from local file.");
+    }
+   
+}
+
+
 int port_active(session_t* sess)
 {
     if(sess->port_addr!=NULL){
@@ -478,15 +599,130 @@ static void do_type(session_t *sess)
 //static void do_mode(session_t *sess);
 static void do_retr(session_t *sess)
 {
+    //下载文件  断点续载
+    //创建数据连接
+    if(get_transfer_fd(sess)==0)
+    {
+        return;
+    }
 
+    long long offset = sess->restart_pos;
+    sess->restart_pos = 0;
+
+
+    //打开文件
+    int fd = open(sess->arg,O_RDONLY);
+    if(fd == -1){
+        ftp_reply(sess,FTP_FILEFAIL,"Failed to open File.");
+        return;
+    }
+    //给文件加锁
+    int ret;
+    ret = lock_file_read(fd);
+    if(ret==-1)
+    {
+          ftp_reply(sess,FTP_FILEFAIL,"Failed to open File.");
+        return;
+    }
+    //是否是普通文件
+    struct stat sbuf;
+    ret = fstat(fd,&sbuf);
+    if(!S_ISREG(sbuf.st_mode)){
+        ftp_reply(sess,FTP_FILEFAIL,"Failed to open File.");
+        return;
+    }
+
+    if(offset!=0)   //说明有断点
+    {
+        ret = lseek(fd,offset,SEEK_SET);
+        if(ret == -1){
+           ftp_reply(sess,FTP_FILEFAIL,"Failed to open File.");
+        return;
+        }
+    }
+
+
+    //150   模式判定  二进制
+    char text[2048] ={0};
+    if(sess->is_ascii)
+    {
+        sprintf(text,"Opening ASCII mode data connection for %s (%lld bytes).",
+            sess->arg,(long long)sbuf.st_size);
+    }else{
+        sprintf(text,"Opening BINARY mode data connection for %s (%lld bytes).",
+            sess->arg,(long long)sbuf.st_size);
+    }    
+    ftp_reply(sess,FTP_DATACONN,text);
+
+    //下载文件
+    int flag=0;
+    //char buf[4096];
+   /* while(1)
+    {
+        ret = read(fd,buf,sizeof(4096));   //会涉及到系统调用
+        if(ret == -1){
+            if(errno == EINTR)
+            {
+                continue;
+            }else{
+                flag =1;
+                break;
+            }        
+        }else if(ret ==0){
+            flag = 0;
+            break;
+        }
+        if(writen(sess->data_fd,buf,ret))
+        {
+            flag = 2;
+            break;
+        }
+    }*/
+
+    //使用sendfile来发送文件
+    // ssize_t sendfile(int out_fd, int in_fd, off_t *offset, size_t count);
+    long long bytes_to_send = sbuf.st_size;
+    if(offset>bytes_to_send){   //过大
+            bytes_to_send = 0;
+    }else{
+        bytes_to_send -= offset;        //断点到文件结尾
+    }
+    while(bytes_to_send){
+        long long num_this_time =  bytes_to_send>4096?4096:bytes_to_send;
+        ret = sendfile(sess->data_fd,fd,NULL,num_this_time);
+        if(ret == -1){
+            flag =2;
+            break;
+        }
+        bytes_to_send-=ret;
+    }
+    if(bytes_to_send==0){
+        flag =0;
+    }
+    //关闭数据套接字
+    list_common(sess,1);
+    close(sess->data_fd);
+    sess->data_fd = -1;
+    close(fd);
+    if(flag==0){
+         //226
+        ftp_reply(sess,FTP_TRANSFEROK,"Transfer complete.");
+    }else if(flag == 1){    //读取数据失败  426
+        ftp_reply(sess,FTP_BADSENDFILE,"Failure reading from local file.");
+    }else if(flag ==2){ //写入失败  451
+        ftp_reply(sess,FTP_BADSENDNET,"Failure writting from local file.");
+    }
+   
 }
-static void do_stor(session_t *sess)
-{
+static void do_stor(session_t *sess)        //上传文件
+{   
+    upload_common(sess,0);
+
 
 }
 static void do_appe(session_t *sess)
 {
-
+    upload_common(sess,1);
 }
 //150
 static void do_list(session_t *sess)
