@@ -4,6 +4,11 @@
 #include"parseconf.h"
 #include"tunable.h"
 #include"ftpproto.h"
+
+
+extern session_t*p_sess;
+
+
 int main(void)
 {
    //list_common(sess);
@@ -66,12 +71,20 @@ const char *tunable_listen_address;
                                         /*控制连接*/
                                         0,-1,"","","",
                                         /*数据连接*/
-                                        NULL,-1,-1,
+                                        NULL,-1,-1,0,
+                                        //限速
+                                        0,0,0,0,
                                         /*父子进程通道*/
                                         -1,-1,
                                         /*FTP协议状态*/
                                         0,0,NULL
                                         };  //初始
+
+    p_sess = &sess;
+
+    sess.bw_upload_rate_max = tunable_upload_max_rate;
+    sess.bw_download_rate_max = tunable_download_max_rate;
+
 
     signal(SIGCHLD,SIG_IGN);   //忽略
     int listenfd = tcp_server(tunable_listen_address,tunable_listen_port);
