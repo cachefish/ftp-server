@@ -77,7 +77,7 @@ const char *tunable_listen_address;
                                         /*父子进程通道*/
                                         -1,-1,
                                         /*FTP协议状态*/
-                                        0,0,NULL
+                                        0,0,NULL,0
                                         };  //初始
 
     p_sess = &sess;

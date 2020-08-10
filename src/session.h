@@ -36,6 +36,7 @@ typedef struct session
         //用于断点续传
         long long restart_pos; 
         char *rnfr_name;
+        int abor_received;
 }session_t;
 
 

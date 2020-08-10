@@ -3,10 +3,12 @@
 #include"ftpproto.h"
 #include"privparent.h"
 #include"privsock.h"
+#include"sysutil.h"
 
 //父进程为nobody进程  子进程为服务进程
 void begin_session(session_t *sess)
 {
+    activate_oobinline(sess->ctrl_fd);
     priv_sock_init(sess);
     /*int sockfds[2];     //父子进程进行通信
     if(socketpair(PF_UNIX,SOCK_STREAM,0,sockfds)<0){//创建一对无名的、相互连接的套接子
