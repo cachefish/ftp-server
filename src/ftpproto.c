@@ -13,10 +13,16 @@ void upload_common(session_t* sess,int is_append);
 
 void limit_rate(session_t *sess,int bytes_transfered,int is_upload);
 
+void handle_alarm_timeout(int sig);
+
 void start_data_alarm(void);
 void start_cmdio_alarm();
 
+void check_abor(session_t*sess);
 
+
+void handle_sigurg(int sig);
+void handle_sigalrm(int sig);
 
 int get_transfer_fd(session_t* sess);
 int get_pasv_fd(session_t* sess);
@@ -126,6 +132,37 @@ void handle_sigalrm(int sig)
     p_sess->data_process = 0;
     start_data_alarm();
 }
+
+void handle_sigurg(int sig)
+{
+    if(p_sess->data_fd==-1){
+        return;
+    }
+    char cmdline[MAX_COMMAND_LINE] = {0};
+    int ret = readline(p_sess->ctrl_fd,cmdline,MAX_COMMAND_LINE);
+    if(ret <=0){
+        ERR_EXIT("readline");
+    }
+    //去除\r\n
+    str_trim_crlf(cmdline);
+    if(strcmp(cmdline,"ABOR")==0||strcmp(cmdline,"\377\364\377\362ABOR")==0){
+        p_sess->abor_received = 1;
+        shutdown(p_sess->data_fd,SHUT_RDWR);
+    }else{
+        ftp_reply(p_sess,FTP_BADCMD,"Unknown cmd");
+    }
+
+}
+
+//检测abor命令
+void check_abor(session_t*sess)
+{
+    if(sess->abor_received){
+        sess->abor_received = 0;
+        ftp_reply(sess,FTP_ABOROK,"ABOR success");
+    }
+}
+
 //启动闹钟
 void start_cmdio_alarm()
 {
@@ -427,6 +464,12 @@ void upload_common(session_t* sess,int is_append)  //上传
         //读取到一定数据，判断下是否需要限速
         limit_rate(sess,ret,1);
 
+        if(sess->abor_received){
+            flag = 2;
+            break;
+        }
+
+
         if(writen(sess->data_fd,buf,ret))
         {
             flag = 1;
@@ -440,14 +483,18 @@ void upload_common(session_t* sess,int is_append)  //上传
     close(sess->data_fd);
     sess->data_fd = -1;
     close(fd);
-    if(flag==0){
+    if(flag==0&&!sess->abor_received){
          //226
         ftp_reply(sess,FTP_TRANSFEROK,"Transfer complete.");
-    }else if(flag == 1){    //读取数据失败  426
+    }else if(flag == 1){    //读取数据失败  451
         ftp_reply(sess,FTP_BADSENDFILE,"Failure writting from local file.");
-    }else if(flag ==2){ //写入失败  451
+    }else if(flag ==2){ //写入失败  426
         ftp_reply(sess,FTP_BADSENDNET,"Failure reading from local file.");
     }
+
+    //再次检测是否有命令过来
+    check_abor(sess);
+    
     //重新开启控制连接通道闹钟
    start_cmdio_alarm();
 }
@@ -613,6 +660,10 @@ static void do_pass(session_t*sess)
           ftp_reply(sess,FTP_LOGINERR,"Login incorrect.");
         return;
     }
+
+    signal(SIGURG,handle_sigurg);
+    activate_sigurg(sess->ctrl_fd);
+
     umask(tunable_local_umask);
     setegid(pw->pw_gid);
     seteuid(pw->pw_uid);
@@ -640,9 +691,10 @@ static void do_cdup(session_t *sess)
     }
     ftp_reply(sess,FTP_CWDOK,"Directory sucessfully changed.");
 }
-static void do_quit(session_t *sess)
+static void do_quit(session_t *sess)    //从服务器断开
 {
-
+    ftp_reply(sess,FTP_GOODBYE,"Goodbye.");
+    exit(EXIT_SUCCESS);
 }
 
 //port命令
@@ -808,6 +860,10 @@ static void do_retr(session_t *sess)
             break;
         }
         limit_rate(sess,ret,0);
+        if(sess->abor_received){
+            flag = 2;
+            break;
+        }
         bytes_to_send-=ret;
     }
     if(bytes_to_send==0){
@@ -818,14 +874,15 @@ static void do_retr(session_t *sess)
     close(sess->data_fd);
     sess->data_fd = -1;
     close(fd);
-    if(flag==0){
+    if(flag==0&&!sess->abor_received){
          //226
         ftp_reply(sess,FTP_TRANSFEROK,"Transfer complete.");
-    }else if(flag == 1){    //读取数据失败  426
+    }else if(flag == 1){    //读取数据失败  451
         ftp_reply(sess,FTP_BADSENDFILE,"Failure reading from local file.");
-    }else if(flag ==2){ //写入失败  451
+    }else if(flag ==2){ //写入失败  436
         ftp_reply(sess,FTP_BADSENDNET,"Failure writting from local file.");
     }
+    check_abor(sess);
     //重新开启控制连接通道闹钟
     start_cmdio_alarm();
 }
@@ -881,9 +938,11 @@ static void do_rest(session_t *sess)
     ftp_reply(sess,FTP_TRANSFEROK,text);
 
 }
-static void do_abor(session_t *sess)
+static void do_abor(session_t *sess)  //中断当前正在数据传输的通道
 {
-
+    //225
+    ftp_reply(sess,FTP_ABOR_NOCONN,"abor no connection");
+    
 }
 //获取路径
 static void do_pwd(session_t *sess)
@@ -998,11 +1057,12 @@ static void do_stat(session_t *sess)
 {
 
 }
-static void do_noop(session_t *sess)
+static void do_noop(session_t *sess)    //为了防止空闲断开
 {
-
+    //200 NOOP ok
+    ftp_reply(sess,FTP_NOOPOK,"NOOP ok");
 }
 static void do_help(session_t *sess)
 {
-
+    
 }
