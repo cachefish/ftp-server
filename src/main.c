@@ -46,8 +46,12 @@ unsigned int tunable_download_max_rate = 0;
 const char *tunable_listen_address;
 */
 
+   
+
     //测试配置
     parseconf_load_file(FTPSERVER_CONF);
+     //设置守护进程
+    daemon(0,0);
     printf("tunable_pasv_enable = %d\n",tunable_pasv_enable);
     printf("tunable_port_enable=%d\n",tunable_port_enable);
 
