@@ -37,6 +37,10 @@ typedef struct session
         long long restart_pos; 
         char *rnfr_name;
         int abor_received;
+        //最大连接数
+        unsigned int num_client;
+        
+        unsigned int num_this_ip;
 }session_t;
 
 
